@@ -1,0 +1,142 @@
+name: simple_gallery_viewer
+description: "简易图集查看器 —— 本地只读的 zip 图集阅读器。"
+# The following line prevents the package from being accidentally published to
+# pub.dev using `flutter pub publish`. This is preferred for private packages.
+publish_to: 'none' # Remove this line if you wish to publish to pub.dev
+
+# The following defines the version and build number for your application.
+# A version number is three numbers separated by dots, like 1.2.43
+# followed by an optional build number separated by a +.
+# Both the version and the builder number may be overridden in flutter
+# build by specifying --build-name and --build-number, respectively.
+# In Android, build-name is used as versionName while build-number used as versionCode.
+# Read more about Android versioning at https://developer.android.com/studio/publish/versioning
+# In iOS, build-name is used as CFBundleShortVersionString while build-number is used as CFBundleVersion.
+# Read more about iOS versioning at
+# https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
+# In Windows, build-name is used as the major, minor, and patch parts
+# of the product and file versions while build-number is used as the build suffix.
+# 版本号：1.3.2 —— 单图翻译就地替代显示 + 原图/译文切换。
+# 1.3.1 修了两个原生侧坑：isTreeUri 误判子文档导致「文件为空」、
+# 输出目录只持久化了读权限。
+# `+` 后面的构建号必须单调递增：Android 用它判断是否算升级安装。
+version: 1.3.13+20
+# 1.3.13 —— 更新免责声明（新增「重译会删掉自己生成的译文图」的具体说明、
+# 翻译由外部服务完成、MIT 开源），并把仓库整理成可公开发布的状态。
+# 1.3.12 —— 新增「重译指定页」：图集卡片 ⋮ → 翻译 → 重译指定页…，选 N–M 段，
+# 删掉这一段已生成的译文图片与记录，然后**只重翻这一段**（范围外不动，原图只读）。
+# 同时把「没有可翻文字」的页从失败里拆出来，单独计为「无有效内容」。
+# 1.3.11 —— 译文不再进系统相册：每个译文目录写一个 `.nomedia`（0 字节）标记，
+# 且在建目录之后、写第一张图之前就写，避免前几页已被媒体扫描器收录；
+# 设置页新增「隐藏译文（不在相册显示）」，给旧目录补一遍标记（只加空文件）。
+# 1.3.10 —— 支持远程（局域网 PC）翻译服务：BridgeClient 真正使用配置里的 host、
+# probe() 对 PC 服务跳过 0.8.0 版本门槛并校验 api==1、配对时总是采用新 host、
+# 图片请求超时 120s→240s（PC 是 CPU llama.cpp）、提示文案不再假定「同机 App」。
+# 1.3.7 —— 译文不再导入成一本「翻译图集」，而是按页挂在原图集上；
+# 列表里不再多出一本图集，删掉旧索引也还能看译文（自动迁移旧数据）。
+# 1.3.6 —— 同步翻译图集时，把同一原图集的重复翻译图集从索引里摘掉
+# （只删索引，不动文件），保留页数最多的那本。
+# 1.3.5 —— 修翻译目录按名字找不到就新建的问题（<AITranslate> 在 exFAT
+# 上被改写成 _AITranslate_，导致出现一串 (2) (11) 目录与重复图集）；
+# 同名候选里选页数最多的那本复用它。
+# 1.3.4 —— 去掉「翻译处理」标签页（改由底部进度条进入）；
+# 原图集里就地叠显译文（顶栏按钮切原图/译文）；
+# 修「已翻译」角标长在翻译图集上且点击跳不动的问题。
+
+environment:
+  sdk: ^3.13.1
+
+# Dependencies specify other packages that your package needs in order to work.
+# To automatically upgrade your package dependencies to the latest versions
+# consider running `flutter pub upgrade --major-versions`. Alternatively,
+# dependencies can be manually updated by changing the version numbers below to
+# the latest version available on pub.dev. To see which dependencies have newer
+# versions available, run `flutter pub outdated`.
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # 中文界面本地化（Material 组件需要 MaterialLocalizations）。
+  flutter_localizations:
+    sdk: flutter
+
+  # The following adds the Cupertino Icons font to your application.
+  # Use with the CupertinoIcons class for iOS style icons.
+  cupertino_icons: ^1.0.8
+
+  # Zip reading. We deliberately do NOT use ZipDecoder.decodeBuffer to open an
+  # archive: it materialises every entry's compressed bytes in RAM at once
+  # (verified by a probe on this project). We read only the central directory,
+  # then extract single entries on demand.
+  archive: ^3.6.1
+
+  # App-private cache directory for cover images and decoded thumbnails.
+  path_provider: ^2.1.4
+  path: ^1.9.0
+
+  # Stable hashing for gallery identity (duplicate-import detection).
+  crypto: ^3.0.6
+
+  # 注意：不再依赖 file_picker。
+  # 它会把文件复制到 App 私有缓存，并且**不申请可持久化 URI 授权**
+  # （FilePickerDelegate.java 中没有任何 FLAG_GRANT_*），导致应用重启后
+  # 压缩包打不开。现在由 native 侧的 SafChannel 自己起选择器并持久化授权。
+
+  # 让「设置 → 关于」能显示真实版本号（从构建产物读取，避免两处不一致）。
+  package_info_plus: ^8.1.1
+
+  # Small key/value store for the gallery index, settings and collections.
+  shared_preferences: ^2.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # The "flutter_lints" package below contains a set of recommended lints to
+  # encourage good coding practices. The lint set provided by the package is
+  # activated in the `analysis_options.yaml` file located at the root of your
+  # package. See that file for information about deactivating specific lint
+  # rules and activating additional ones.
+  flutter_lints: ^6.0.0
+
+# For information on the generic Dart part of this file, see the
+# following page: https://dart.dev/tools/pub/pubspec
+
+# The following section is specific to Flutter packages.
+flutter:
+
+  # The following line ensures that the Material Icons font is
+  # included with your application, so that you can use the icons in
+  # the material Icons class.
+  uses-material-design: true
+
+  # To add assets to your application, add an assets section, like this:
+  # assets:
+  #   - images/a_dot_burr.jpeg
+  #   - images/a_dot_ham.jpeg
+
+  # An image asset can refer to one or more resolution-specific "variants", see
+  # https://flutter.dev/to/resolution-aware-images
+
+  # For details regarding adding assets from package dependencies, see
+  # https://flutter.dev/to/asset-from-package
+
+  # To add custom fonts to your application, add a fonts section here,
+  # in this "flutter" section. Each entry in this list should have a
+  # "family" key with the font family name, and a "fonts" key with a
+  # list giving the asset and other descriptors for the font. For
+  # example:
+  # fonts:
+  #   - family: Schyler
+  #     fonts:
+  #       - asset: fonts/Schyler-Regular.ttf
+  #       - asset: fonts/Schyler-Italic.ttf
+  #         style: italic
+  #   - family: Trajan Pro
+  #     fonts:
+  #       - asset: fonts/TrajanPro.ttf
+  #       - asset: fonts/TrajanPro_Bold.ttf
+  #         weight: 700
+  #
+  # For details regarding fonts from package dependencies,
+  # see https://flutter.dev/to/font-from-package
